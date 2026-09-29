@@ -1,0 +1,202 @@
+#Q1 — Revenue Performance by Channel
+-- Business scenario:
+-- The FP&A team wants to understand how NovaTech's sales are performing across its two sales channels.
+-- Requirement: For FY2024-25, calculate for each channel:
+-- Total orders, Total units sold, Total revenue, Average order value
+-- Show one row per channel.
+# Business rules:
+-- Revenue should be calculated from order_details
+-- Use the selling price and quantity after considering the discount.
+-- Only include orders belonging to FY2024-25.
+
+select c.channel_id,  count(distinct o.order_id) as total_orders , sum(od.quantity) as total_unit_sold,
+round(sum(od.quantity * od.unit_price * (1- discount_pct /100) ),2) as total_revenue, ROUND(sum(od.quantity * od.unit_price * (1- discount_pct /100))/count(distinct o.order_id),2) as avg_order_Value
+from order_details od
+join orders o
+on od.order_id = o.order_id
+join channels c
+on o.channel_id = c.channel_id 
+where date(order_date) between '2024-04-01' and '2025-03-31'
+group by c.channel_id;
+/*Q2 — Product Category Revenue & Growth
+
+Business scenario:
+The CFO wants to understand which product categories are driving revenue growth.
+
+Requirement:
+For each product category, calculate:
+
+FY2023-24 revenue
+FY2024-25 revenue
+Revenue growth amount
+Revenue growth %
+
+Return one row per product category.
+
+Business rule:
+Growth % should safely handle a prior-year revenue of zero.
+
+Q3 — Customer Segment Performance
+
+Business scenario:
+Management wants to compare Consumer, Business, and Education customers.
+
+Requirement:
+For FY2024-25, calculate by customer segment:
+
+Number of customers who placed orders
+Number of orders
+Units sold
+Revenue
+Average revenue per customer
+
+Important:
+Be careful about the grain of customers vs orders vs order details.
+
+Q4 — Monthly Revenue Trend + MoM Analysis
+
+Business scenario:
+The FP&A manager wants a monthly revenue trend for FY2024-25.
+
+Requirement:
+For every fiscal month, show:
+
+Fiscal year
+Fiscal month
+Revenue
+Previous month's revenue
+MoM revenue change
+MoM revenue growth %
+
+Return the months in chronological order.
+
+Important:
+Think carefully about how the fiscal calendar connects to transaction dates.
+
+Q5 — Top Products Within Each Category
+
+Business scenario:
+The product finance team wants to identify the strongest products within each category.
+
+Requirement:
+For FY2024-25, calculate product revenue and rank products within their product category.
+
+Return:
+
+Product
+Category
+Revenue
+Category rank
+
+Show the top 3 products in each category.
+
+Important:
+The ranking must restart for every category.
+
+Q6 — Department Budget vs Actual
+
+Business scenario:
+The CFO wants to review whether departmental spending stayed within budget during FY2024-25.
+
+Requirement:
+For each department and cost category, calculate:
+
+Budget
+Actual
+Variance
+Variance %
+Budget utilization %
+
+Return one row per department + cost category.
+
+Business rule:
+Positive variance should represent Actual − Budget.
+
+Q7 — Department Expense Investigation
+
+Business scenario:
+The CFO notices that some departments have significantly higher expenses than others and wants a deeper analysis.
+
+Requirement:
+For FY2024-25, calculate for each department:
+
+Total budget
+Total actual
+Total variance
+Variance %
+Total payroll
+Payroll as % of actual expenses
+
+Then rank departments based on their actual expenses.
+
+Important:
+You will need to think about whether all metrics should be aggregated from the same table before joining them.
+
+Q8 — Management Case: Revenue vs Forecast
+
+Business scenario:
+The FP&A team is preparing the monthly management review. They want to compare actual sales performance with the company's monthly forecast.
+
+Requirement:
+For FY2024-25, produce a monthly analysis showing:
+
+Month
+Actual revenue
+Forecast revenue
+Revenue variance
+Forecast variance %
+Actual vs forecast status
+
+Classify each month as:
+
+Above Forecast
+Below Forecast
+On Track
+
+Important:
+Before writing the query, determine whether forecast_monthly can be directly joined to the actual sales tables. If not, determine what common business dimensions are available.
+
+Q9 — Inventory & Sales Investigation
+
+Business scenario:
+Management is concerned that some products may have strong sales but insufficient inventory coverage.
+
+Requirement:
+For FY2024-25, identify products that had:
+
+High revenue
+Low average inventory
+
+For each product, show:
+
+Product
+Category
+Revenue
+Average inventory
+Units sold
+
+Then identify products that meet both conditions:
+
+Revenue is above the overall product average
+Average inventory is below the overall product average
+
+Important:
+Do not allow the inventory records to multiply the sales records.
+
+Q10 — Final Interview Case: Profitability Investigation
+
+Business scenario:
+You are working as an FP&A Analyst at NovaTech. The CFO asks:
+
+"Which areas of the business should we investigate because they may be contributing to weaker profitability?"
+
+Using FY2024-25 data, create an analysis that brings together relevant sales and cost information and shows, where the available data supports it:
+
+Revenue
+Units sold
+COGS / production-related costs
+Gross profit
+Gross margin %
+Relevant operating costs
+Profitability indicators
+Year-over-year change
