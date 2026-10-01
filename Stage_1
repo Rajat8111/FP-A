@@ -19,144 +19,227 @@ on o.channel_id = c.channel_id
 where date(order_date) between '2024-04-01' and '2025-03-31'
 group by c.channel_id;
 /*Q2 — Product Category Revenue & Growth
-
 Business scenario:
 The CFO wants to understand which product categories are driving revenue growth.
-
 Requirement:
 For each product category, calculate:
-
 FY2023-24 revenue
 FY2024-25 revenue
 Revenue growth amount
 Revenue growth %
-
 Return one row per product category.
-
 Business rule:
-Growth % should safely handle a prior-year revenue of zero.
+Growth % should safely handle a prior-year revenue of zero.*/
 
-Q3 — Customer Segment Performance
 
+with revenue_metric_2023 as (
+select p.category , ROUND(sum(od.quantity * od.unit_price * (1 - od.discount_pct / 100)),2) as Revenue_growth_amount_2023
+from products p
+join order_details od
+on p.product_id = od.product_id
+join orders o
+on o.order_id = od.order_id
+where date(o.order_date) between '2023-04-01' and '2024-03-31'
+group by p.category)
+,
+Revenue_metric_2024 as(
+select p.category , ROUND(sum(od.quantity * od.unit_price * (1 - od.discount_pct / 100)),2) as Revenue_growth_amount_2024
+from products p
+join order_details od
+on p.product_id = od.product_id
+join orders o
+on o.order_id = od.order_id
+where date(o.order_date) between '2024-04-01' and '2025-03-31'
+group by p.category)
+select r.category , r.Revenue_growth_amount_2023,r1.Revenue_growth_amount_2024, round((r1.Revenue_growth_amount_2024 - r.Revenue_growth_amount_2023)/ NULLIF(r.Revenue_growth_amount_2023,0)*100,2) as revenue_growth_pct
+from Revenue_metric_2023 r
+left join revenue_metric_2024 r1
+on r.category = r1.category;
+
+/*Q3 — Customer Segment Performance
 Business scenario:
 Management wants to compare Consumer, Business, and Education customers.
-
 Requirement:
 For FY2024-25, calculate by customer segment:
-
 Number of customers who placed orders
 Number of orders
 Units sold
 Revenue
 Average revenue per customer
-
 Important:
-Be careful about the grain of customers vs orders vs order details.
+Be careful about the grain of customers vs orders vs order details.*/
+select * from customers;
+with customer_segment as(
+select c.segment, COUNT(DISTINCT c.customer_id) as number_of_customer, 
+		COUNT(DISTINCT o.order_id) as number_of_order, 
+		sum(od.quantity) as Unit_Sold, 
+		round(sum(od.quantity * od.unit_price * (1- discount_pct /100) ),2) as revenue 
+from customers c
+join orders o
+on c.customer_id = o.customer_id
+join order_details od
+on o.order_id = od.order_id
+where DATE(order_date) between '2024-04-01' and '2025-03-31'
+group by c.segment )
+select segment,number_of_customer,number_of_order, Unit_sold,revenue,  ROUND(revenue/number_of_customer,2) as avg_rev_per_cust
+from customer_segment;
 
-Q4 — Monthly Revenue Trend + MoM Analysis
-
+/*Q4 — Monthly Revenue Trend + MoM Analysis
 Business scenario:
 The FP&A manager wants a monthly revenue trend for FY2024-25.
-
 Requirement:
 For every fiscal month, show:
-
 Fiscal year
 Fiscal month
 Revenue
 Previous month's revenue
 MoM revenue change
 MoM revenue growth %
-
 Return the months in chronological order.
-
 Important:
-Think carefully about how the fiscal calendar connects to transaction dates.
+Think carefully about how the fiscal calendar connects to transaction dates.*/
 
-Q5 — Top Products Within Each Category
+with revenue_metric as(
+select fc.fiscal_year_start, fc.fiscal_month_num,fc.month_start, ROUND(sum(quantity * Unit_price * (1-discount_pct / 100)),2) as revenue
+from orders o
+join order_details od
+on o.order_id = od.order_id
+join fiscal_calendar fc
+on fc.month_start = DATE_FORMAT(o.order_date , '%y-%m-01')
+where fc.fiscal_year_start = 'FY2025-25'
+group by fc.fiscal_year_start, fc.fiscal_month_num,fc.month_start),
 
+previous_metric as(
+select fiscal_year_start, fiscal_month_num,month_start, revenue , LAG(revenue) over(order by month_start) as previous_revenue
+from revenue_metric)
+select fiscal_year_start, fiscal_month_num,month_start,revenue,previous_revenue,revenue - previous_revenue as MOM_changes,ROUND(revenue - previous_revenue)/ nullif(previous_revenue,0) * 100 as MOM_revenue_growth
+from previous_metric;
+
+select * from fiscal_calendar;
+
+/* Q5 — Top Products Within Each Category
 Business scenario:
 The product finance team wants to identify the strongest products within each category.
-
 Requirement:
 For FY2024-25, calculate product revenue and rank products within their product category.
-
 Return:
-
 Product
 Category
 Revenue
 Category rank
-
 Show the top 3 products in each category.
-
 Important:
-The ranking must restart for every category.
+The ranking must restart for every category.*/
+with product_matric as (
+select p.product_name, p.category, ROUND(sum(od.quantity * od.unit_price * (1- od.discount_pct /100)),2) as Revenue
+,RANK() over(partition by category order by ROUND(sum(od.quantity * od.unit_price * (1- od.discount_pct /100)),2) DESC) as category_rank
+from products p
+join order_details od
+on p.product_id = od.product_id
+join orders o
+on od.order_id = o.order_id
+where DATE(o.order_date) between '2024-04-01' and '2025-03-31'
+group by p.product_name, p.category)
 
-Q6 — Department Budget vs Actual
+select product_name, category,Revenue, category_rank
+from product_matric
+where category_rank <= 3;
 
+/*Q6 — Department Budget vs Actual
 Business scenario:
 The CFO wants to review whether departmental spending stayed within budget during FY2024-25.
-
 Requirement:
 For each department and cost category, calculate:
-
 Budget
 Actual
 Variance
 Variance %
-Budget utilization %
-
+Budget utilization % (actual/budget)*100
 Return one row per department + cost category.
-
 Business rule:
-Positive variance should represent Actual − Budget.
+Positive variance should represent Actual − Budget.*/
+select * from department_actuals;
+select * from department_budget;
 
-Q7 — Department Expense Investigation
+with budget_metric as(
+select department_id,cost_category, sum(budget_amount) as budget
+from department_budget
+group by department_id, cost_category),
+actual_metric as (
+select department_id ,cost_category, sum(actual_amount) as actual
+from department_actuals
+group by department_id, cost_category),
+variance_metric as(
+select b.department_id ,b.cost_category ,b.budget,a.actual, (a.actual - b.budget) as variance,
+ROUND((a.actual - b.budget)/b.budget*100,2) as variance_pct, ROUND((actual/budget)*100,2) as budget_utilization_pct
+from budget_metric b 
+join actual_metric a
+on a.department_id = b.department_id
+and b.cost_category = a.cost_category
+)
+select department_id,cost_category budget,actual,variance,variance_pct, Budget_utilization_pct
+from variance_metric;
 
+/*Q7 — Department Expense Investigation
 Business scenario:
 The CFO notices that some departments have significantly higher expenses than others and wants a deeper analysis.
-
 Requirement:
 For FY2024-25, calculate for each department:
-
 Total budget
 Total actual
 Total variance
 Variance %
 Total payroll
 Payroll as % of actual expenses
-
 Then rank departments based on their actual expenses.
-
 Important:
-You will need to think about whether all metrics should be aggregated from the same table before joining them.
+You will need to think about whether all metrics should be aggregated from the same table before joining them.*/
 
-Q8 — Management Case: Revenue vs Forecast
+with budget_metric as (
+select department_id, sum(budget_amount) as total_budget
+from department_budget
+group by department_id),
+actual_metric as(
+select department_id,cost_category , sum(actual_amount) as total_actual, SUM(CASE WHEN cost_category = 'Salaries' then actual_amount else 0 end) as actual_expense
+from department_actuals 
+group by department_id,cost_category),
+variance_metric as (
+select b.department_id, b.total_budget,a.total_actual,(a.total_actual - b.total_budget) as total_variance, 
+ROUND((a.total_actual - b.total_budget)/a.total_actual*100,2) as Variance_pct, actual_expense
+from budget_metric b
+join actual_metric a
+on b.department_id = a.department_id
+),
+employee_metric as(
+select department_id,sum(e.monthly_salary) as Total_payroll
+from employees e
+group by e.department_id)
+select v.department_id, total_budget, total_actual,total_variance,variance_pct,total_payroll, actual_expense
+from variance_metric v
+join employee_metric e
+on v.department_id = e.department_id;
 
+
+/*Q8 — Management Case: Revenue vs Forecast
 Business scenario:
 The FP&A team is preparing the monthly management review. They want to compare actual sales performance with the company's monthly forecast.
-
 Requirement:
 For FY2024-25, produce a monthly analysis showing:
-
 Month
 Actual revenue
 Forecast revenue
 Revenue variance
 Forecast variance %
 Actual vs forecast status
-
 Classify each month as:
-
 Above Forecast
 Below Forecast
 On Track
-
 Important:
-Before writing the query, determine whether forecast_monthly can be directly joined to the actual sales tables. If not, determine what common business dimensions are available.
+Before writing the query, determine whether forecast_monthly can be directly joined to the actual sales tables. 
+If not, determine what common business dimensions are available.*/
 
-Q9 — Inventory & Sales Investigation
+/*Q9 — Inventory & Sales Investigation
 
 Business scenario:
 Management is concerned that some products may have strong sales but insufficient inventory coverage.
