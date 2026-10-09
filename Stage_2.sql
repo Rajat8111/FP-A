@@ -119,6 +119,81 @@ Show:
 - Variance %
 - Forecast Accuracy %
 - Status*/
+WITH revenue_metric AS (
+    SELECT
+        p.category,
+        o.channel_id,
+        DATE_FORMAT(o.order_date, '%Y-%m-01') AS month,
+        SUM(
+            od.quantity * od.unit_price *
+            (1 - od.discount_pct / 100)
+        ) AS actual_revenue
+    FROM orders o
+    JOIN order_details od
+        ON o.order_id = od.order_id
+    JOIN products p
+        ON od.product_id = p.product_id
+    WHERE o.order_date BETWEEN '2024-04-01' AND '2025-03-31'
+    GROUP BY
+        p.category,
+        o.channel_id,
+        DATE_FORMAT(o.order_date, '%Y-%m-01')
+),
+
+forecast_metric AS (
+    SELECT
+        fm.product_category,
+        fm.channel_id,
+        fm.forecast_month AS month,
+        SUM(fm.forecast_revenue) AS forecast_revenue
+    FROM forecast_monthly fm
+    WHERE fm.forecast_month BETWEEN '2024-04-01' AND '2025-03-31'
+    GROUP BY
+        fm.product_category,
+        fm.channel_id,
+        fm.forecast_month
+),
+
+variance_metric AS (
+    SELECT
+        rm.category,
+        rm.channel_id,
+        rm.month,
+        rm.actual_revenue,
+        fm.forecast_revenue,
+        rm.actual_revenue - fm.forecast_revenue AS variance,
+
+        ROUND(
+            (rm.actual_revenue - fm.forecast_revenue)
+            / NULLIF(fm.forecast_revenue, 0) * 100,
+            2
+        ) AS variance_pct
+    FROM revenue_metric rm
+    JOIN forecast_metric fm
+        ON rm.category = fm.product_category
+       AND rm.channel_id = fm.channel_id
+       AND rm.month = fm.month
+),
+dashboard_metric as(
+SELECT
+    category,
+    c.channel_id,
+    c.channel_name,
+    month,
+    actual_revenue,
+    forecast_revenue,
+    variance,
+    variance_pct,
+    ROUND(100-abs(actual_revenue - forecast_revenue) / nullif(forecast_revenue,0)*100,2) as forecast_accuracy_pct
+FROM channels c
+JOIN variance_metric vm
+    ON c.channel_id = vm.channel_id)
+select category,channel_id,channel_name, month,ROUND(actual_revenue,2) as actual_revenue,forecast_revenue,ROUND(variance,2) as variance,variance_pct,forecast_accuracy_pct,
+CASE WHEN forecast_accuracy_pct > 95 THEN 'Excellent'
+WHEN forecast_accuracy_pct >= 90 THEN 'Good'
+WHEN forecast_accuracy_pct >= 80 then 'Need improvement'
+ELSE 'Poor' end as status
+from dashboard_metric;
 
 
 /*Business Scenario
